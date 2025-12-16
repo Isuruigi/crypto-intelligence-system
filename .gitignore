@@ -111,3 +111,8 @@ API_ENDPOINTS.html
 *.key
 *.pem
 credentials.json
+
+# Poster and personal guide files
+*POSTER*.md
+*GUIDE*.md
+*PROMPT*.md

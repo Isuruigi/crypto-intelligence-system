@@ -38,17 +38,17 @@ st.markdown("""
         border-radius: 10px;
         border-left: 4px solid #00d2ff;
     }
-    .signal-buy {
+    .signal-buy, .signal-strong_buy {
         color: #00ff00;
         font-weight: bold;
         font-size: 32px;
     }
-    .signal-sell {
+    .signal-sell, .signal-strong_sell {
         color: #ff0000;
         font-weight: bold;
         font-size: 32px;
     }
-    .signal-hold {
+    .signal-neutral, .signal-hold {
         color: #ffaa00;
         font-weight: bold;
         font-size: 32px;
@@ -74,8 +74,8 @@ if st.sidebar.button("🔄 Refresh Now") or auto_refresh:
 try:
     with st.spinner("Generating signal..."):
         response = requests.post(
-            f"{API_URL}/signal",
-            json={"symbol": symbol, "timeframe": "4h"},
+            f"{API_URL}/api/v1/signal",
+            params={"symbol": symbol, "timeframe": "4h"},
             timeout=120  # Increased timeout for first run (FinBERT model download)
         )
         
@@ -86,121 +86,126 @@ try:
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                signal_class = f"signal-{signal['signal'].lower()}"
+                signal_type = signal.get('signal', 'NEUTRAL')
+                signal_class = f"signal-{signal_type.lower()}"
                 st.markdown(f"### Trading Signal")
-                st.markdown(f'<p class="{signal_class}">{signal["signal"]}</p>', unsafe_allow_html=True)
+                st.markdown(f'<p class="{signal_class}">{signal_type}</p>', unsafe_allow_html=True)
             
             with col2:
-                st.metric("Confidence", f"{signal['confidence']}%")
+                confidence = signal.get('confidence', 0)
+                st.metric("Confidence", f"{confidence:.1f}%")
                 
             with col3:
-                st.metric("Price", f"${signal['price']:,.2f}")
+                price = signal.get('price', 0)
+                price_change = signal.get('price_change_24h', 0)
+                st.metric("Price", f"${price:,.2f}", f"{price_change:+.2f}%")
             
             with col4:
-                st.metric("Timeframe", signal['timeframe'])
+                risk_level = signal.get('risk', {}).get('level', 'medium')
+                st.metric("Risk Level", risk_level.upper())
             
             st.markdown("---")
             
             # Trading thesis
-            st.markdown("### 📊 Trading Thesis")
-            st.info(signal['thesis'])
-            
-            # Two columns for factors
-            col_left, col_right = st.columns(2)
-            
-            with col_left:
-                st.markdown("### ✅ Key Factors")
-                for factor in signal['key_factors']:
-                    st.markdown(f"- {factor}")
-            
-            with col_right:
-                st.markdown("### ⚠️ Risk Factors")
-                for risk in signal['risk_factors']:
-                    st.markdown(f"- {risk}")
+            thesis = signal.get('thesis', 'No thesis available')
+            if thesis:
+                st.markdown("### 📊 Trading Thesis")
+                st.info(thesis)
             
             st.markdown("---")
             
-            # Position sizing
-            st.markdown("### 💰 Position Sizing Recommendation")
-            st.success(signal['position_sizing'])
+            # Risk Management
+            risk = signal.get('risk', {})
+            st.markdown("### 💰 Risk Management")
+            col_r1, col_r2, col_r3 = st.columns(3)
+            with col_r1:
+                position_size = risk.get('position_size', 0.02)
+                st.metric("Position Size", f"{position_size*100:.1f}%")
+            with col_r2:
+                stop_loss = risk.get('stop_loss_pct', 5)
+                st.metric("Stop Loss", f"{stop_loss:.1f}%")
+            with col_r3:
+                take_profit = risk.get('take_profit_pct', 10)
+                st.metric("Take Profit", f"{take_profit:.1f}%")
             
-            # Historical pattern
-            if signal.get('historical_pattern'):
-                st.markdown("### 📈 Historical Context")
-                st.write(signal['historical_pattern'])
+            # Warnings
+            warnings = risk.get('warnings', [])
+            if warnings:
+                st.markdown("### ⚠️ Risk Warnings")
+                for w in warnings:
+                    st.warning(w)
+            
+            st.markdown("---")
+            
+            # Component Scores
+            components = signal.get('components', {})
+            if components:
+                st.markdown("### 📈 Component Scores")
+                
+                col_c1, col_c2, col_c3, col_c4 = st.columns(4)
+                with col_c1:
+                    social = components.get('social', 0)
+                    st.metric("Social", f"{(social+1)/2*100:.1f}%")
+                with col_c2:
+                    news = components.get('news', 0)
+                    st.metric("News", f"{(news+1)/2*100:.1f}%")
+                with col_c3:
+                    chain = components.get('chain', 0)
+                    st.metric("On-Chain", f"{(chain+1)/2*100:.1f}%")
+                with col_c4:
+                    whale = components.get('whale', 0)
+                    st.metric("Whale", f"{(whale+1)/2*100:.1f}%")
+                
+                # Component bar chart
+                fig = go.Figure(data=[
+                    go.Bar(
+                        x=['Social', 'News', 'On-Chain', 'Whale'],
+                        y=[(social+1)/2*100, (news+1)/2*100, (chain+1)/2*100, (whale+1)/2*100],
+                        marker_color=['#2ecc71', '#3498db', '#9b59b6', '#e67e22']
+                    )
+                ])
+                fig.update_layout(
+                    title="Component Performance",
+                    yaxis_title="Score (%)",
+                    yaxis_range=[0, 100],
+                    height=300
+                )
+                st.plotly_chart(fig, use_container_width=True)
             
             st.markdown("---")
             
             # Detailed analysis (if enabled)
-            if show_details and 'underlying_data' in signal:
+            if show_details:
                 st.markdown("### 🔍 Detailed Multi-Modal Analysis")
                 
-                tab1, tab2, tab3 = st.tabs(["🐋 Whale Activity", "📊 Order Book", "😱 Sentiment"])
+                tab1, tab2, tab3 = st.tabs(["🐋 Whale Activity", "📊 Market Data", "😱 Sentiment"])
                 
                 with tab1:
-                    whale_data = signal['underlying_data'].get('whale_sentiment', {})
+                    agent_summary = signal.get('agent_summary', {})
+                    whale_data = agent_summary.get('whale', {})
                     
-                    col1, col2, col3 = st.columns(3)
+                    col1, col2 = st.columns(2)
                     with col1:
-                        st.metric("Whale Score", f"{whale_data.get('whale_score', 0):.1f}")
+                        st.metric("Accumulation Score", f"{whale_data.get('accumulation_score', 0):.2f}")
                     with col2:
-                        st.metric("Transactions", whale_data.get('whale_count', 0))
-                    with col3:
-                        st.metric("Volume", f"{whale_data.get('total_volume', 0):.2f} BTC")
-                    
-                    st.write(f"**Sentiment:** {whale_data.get('sentiment', 'NEUTRAL')}")
-                    st.write(f"**Exchange Pressure:** {whale_data.get('exchange_pressure', 0):.2f} BTC")
+                        st.metric("Whale Sentiment", whale_data.get('sentiment', 'neutral').upper())
                 
                 with tab2:
-                    orderbook_data = signal['underlying_data'].get('orderbook', {})
+                    market_context = signal.get('market_context', {})
                     
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        imbalance = orderbook_data.get('imbalance', 0)
-                        st.metric("Bid/Ask Imbalance", f"{imbalance:.4f}")
+                        fg = market_context.get('fear_greed', 50)
+                        st.metric("Fear & Greed", f"{fg}/100")
                     with col2:
-                        st.metric("Market Depth", f"{orderbook_data.get('market_depth_score', 0):.1f}/100")
+                        volatility = market_context.get('volatility', 0)
+                        st.metric("Volatility", f"{volatility:.2f}%")
                     with col3:
-                        spoofing = "⚠️ YES" if orderbook_data.get('spoofing_detected') else "✅ NO"
-                        st.metric("Spoofing", spoofing)
-                    
-                    # Gauge chart for imbalance
-                    fig = go.Figure(go.Indicator(
-                        mode = "gauge+number",
-                        value = imbalance,
-                        domain = {'x': [0, 1], 'y': [0, 1]},
-                        title = {'text': "Order Book Imbalance"},
-                        gauge = {
-                            'axis': {'range': [-1, 1]},
-                            'bar': {'color': "lightblue"},
-                            'steps': [
-                                {'range': [-1, -0.3], 'color': "#ffcccc"},
-                                {'range': [-0.3, 0.3], 'color': "#ffffcc"},
-                                {'range': [0.3, 1], 'color': "#ccffcc"}
-                            ],
-                            'threshold': {
-                                'line': {'color': "red", 'width': 4},
-                                'thickness': 0.75,
-                                'value': 0
-                            }
-                        }
-                    ))
-                    fig.update_layout(height=300)
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                with tab3:
-                    sentiment_data = signal['underlying_data'].get('retail_sentiment', {})
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Sentiment Score", f"{sentiment_data.get('sentiment_score', 0):.2f}")
-                    with col2:
-                        st.metric("Fear/Greed", f"{sentiment_data.get('fear_greed_index', 50)}/100")
-                    with col3:
-                        st.metric("Posts Analyzed", sentiment_data.get('post_count', 0))
+                        imbalance = market_context.get('orderbook_imbalance', 0)
+                        st.metric("Orderbook Imbalance", f"{imbalance:.4f}")
                     
                     # Fear & Greed gauge
-                    fg_index = sentiment_data.get('fear_greed_index', 50)
+                    fg_index = market_context.get('fear_greed', 50)
                     fig = go.Figure(go.Indicator(
                         mode = "gauge+number",
                         value = fg_index,
@@ -220,16 +225,27 @@ try:
                     ))
                     fig.update_layout(height=300)
                     st.plotly_chart(fig, use_container_width=True)
+                
+                with tab3:
+                    agent_summary = signal.get('agent_summary', {})
+                    social_data = agent_summary.get('social', {})
+                    news_data = agent_summary.get('news', {})
                     
-                    st.write(f"**Dominant Emotion:** {sentiment_data.get('dominant_emotion', 'neutral').upper()}")
-                    st.write(f"**Volume:** {sentiment_data.get('volume', 'low').upper()}")
-                    
-                    if sentiment_data.get('top_keywords'):
-                        st.write(f"**Top Keywords:** {', '.join(sentiment_data['top_keywords'][:5])}")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("**Social Sentiment**")
+                        st.metric("Score", f"{social_data.get('sentiment', 0):.2f}")
+                        st.write(f"Posts Analyzed: {social_data.get('posts_analyzed', 0)}")
+                    with col2:
+                        st.markdown("**News Sentiment**")
+                        st.metric("Score", f"{news_data.get('sentiment', 0):.2f}")
+                        st.write(f"Articles Analyzed: {news_data.get('articles_analyzed', 0)}")
             
             # Metadata
             st.markdown("---")
-            st.caption(f"Generated at: {signal['generated_at']} | Symbol: {signal['symbol']}")
+            timestamp = signal.get('generated_at', signal.get('timestamp', 'N/A'))
+            execution_time = signal.get('execution_time_ms', 0)
+            st.caption(f"Generated at: {timestamp} | Execution Time: {execution_time:.0f}ms | Symbol: {signal.get('symbol', symbol)}")
             
         else:
             st.error(f"Failed to fetch signal: {response.status_code}")
@@ -237,11 +253,13 @@ try:
 
 except requests.exceptions.ConnectionError:
     st.error("⚠️ Cannot connect to API. Make sure the FastAPI server is running at " + API_URL)
-    st.info("Start the server with: `uvicorn app.main:app --reload`")
+    st.info("Start the server with: `python run_api.py`")
 except requests.exceptions.Timeout:
     st.error("⚠️ Request timed out. Signal generation is taking longer than expected.")
 except Exception as e:
     st.error(f"❌ Error: {str(e)}")
+    import traceback
+    st.code(traceback.format_exc())
 
 # Auto-refresh logic
 if auto_refresh:

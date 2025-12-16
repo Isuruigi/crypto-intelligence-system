@@ -358,13 +358,14 @@ class RiskManager:
             concentration_risk=0.3  # Default moderate
         )
         
-        # Calculate overall risk score
+        # Calculate overall risk score (0-100 range)
+        # Each risk factor is 0-1, weights sum to 100
         risk_score = (
             volatility_risk * 30 +
             sentiment_risk * 25 +
             confidence_risk * 25 +
             0.2 * 20  # Base risk
-        ) * 100
+        )
         
         # Determine risk level
         risk_level = self._classify_risk(risk_score)
